@@ -1,8 +1,33 @@
-# 🔐 TLS Auditor — Sistema de Análisis de Configuración TLS
+# 🔐 TLS/SSL Auditor
 
 > **Hackathon · Reto 2: Sistema de Análisis de Configuración TLS y Riesgo de Exposición en Servicios Web**
 
-Sistema modular de auditoría TLS/SSL que analiza servidores web, identifica configuraciones inseguras, clasifica hallazgos por nivel de criticidad y genera reportes orientados al cliente final (no técnico) y al equipo técnico.
+Herramienta de ciberseguridad que analiza la configuración TLS/SSL de servidores web para detectar vulnerabilidades, evaluar el nivel de riesgo y generar recomendaciones claras orientadas tanto al equipo técnico como al cliente final.
+
+---
+
+## ¿Para qué sirve?
+
+Cuando un servidor web usa HTTPS, necesita configurar correctamente los protocolos y algoritmos de cifrado (TLS/SSL). Una mala configuración puede permitir que atacantes:
+
+- **Descifren el tráfico** de los usuarios (robo de contraseñas, sesiones, datos personales).
+- **Suplanten la identidad** del servidor (ataques Man-in-the-Middle).
+- **Aprovechen vulnerabilidades conocidas** como POODLE, FREAK o Heartbleed.
+
+Este sistema escanea uno o más servidores y reporta exactamente qué está mal, qué nivel de riesgo representa y qué acción concreta tomar para solucionarlo.
+
+---
+
+## ¿Qué hace?
+
+| Análisis | Qué detecta |
+|---|---|
+| **Protocolos TLS/SSL** | SSL 2.0, SSL 3.0, TLS 1.0 y 1.1 obsoletos habilitados |
+| **Cipher Suites** | Algoritmos débiles: RC4, DES, 3DES, NULL, EXPORT, MD5 |
+| **Puntuación de cifrado** | Score 0-10 por cipher suite con desglose por componente (KEX, Auth, Cipher, Hash) |
+| **Certificado digital** | Fecha de vencimiento, confiabilidad (CA reconocida vs. autofirmado) |
+| **Vulnerabilidades** | POODLE, FREAK, cipher NULL/ANON |
+| **Comparativa** | Matriz de diferencias cuando se escanean múltiples servidores |
 
 ---
 
@@ -10,265 +35,180 @@ Sistema modular de auditoría TLS/SSL que analiza servidores web, identifica con
 
 ```
 hackaton/
-├── app.py                    ← Dashboard web (Streamlit) — punto de entrada principal
-├── run_audit.py              ← Orquestador CLI para uso desde terminal
-├── targets.txt               ← Ejemplo de archivo de targets
-├── scanner/
-│   ├── 01_validator.py       ← Validación y normalización de entradas
-│   ├── 02_tls_scanner.py     ← Motor TLS (sslyze + ssl nativo como fallback)
-│   ├── 03_nmap_scanner.py    ← Escaneo de puertos y vulnerabilidades (Nmap NSE)
-│   ├── 04_crypto_analyzer.py ← Análisis criptográfico del certificado
-│   ├── 05_risk_evaluator.py  ← Motor de riesgo, scoring y hallazgos
-│   └── 06_reporter.py        ← Generación de reportes (JSON, CSV, HTML, TXT)
-└── reports/                  ← Reportes generados automáticamente (con timestamp)
+├── dashboard.py      ← Interfaz web interactiva (Streamlit) — usar esto
+├── tlsauditor.py     ← Motor de análisis + herramienta de línea de comandos
+└── README.md
 ```
+
+**`tlsauditor.py`** contiene toda la lógica de análisis:
+- Validación de entradas (IPs, dominios, puertos)
+- Sistema de puntuación de cipher suites (0-10 con 4 pesos ponderados)
+- Motor de recomendaciones con nivel de severidad (CRÍTICO/ALTO/MEDIO)
+- Comparativa entre múltiples servidores
+
+**`dashboard.py`** es la interfaz web que llama a `tlsauditor.py` y muestra los resultados de forma visual.
 
 ---
 
 ## Instalación
 
+### Requisitos previos
+
+- Python 3.11 o superior
+- pip
+
+### 1. Instalar dependencias
+
 ```bash
-pip install streamlit sslyze cryptography plotly
+pip install sslyze cryptography streamlit pandas
 ```
 
-> **Nmap** (opcional pero recomendado para detectar Heartbleed, POODLE, LOGJAM):
-> Descargar desde https://nmap.org/download.html e instalar.
-> Debe estar disponible en el PATH del sistema.
+| Librería | Para qué sirve |
+|---|---|
+| `sslyze` | Motor que ejecuta el escaneo TLS contra el servidor |
+| `cryptography` | Lectura y análisis de certificados digitales |
+| `streamlit` | Interfaz web del dashboard |
+| `pandas` | Tablas de datos en el dashboard |
 
 ---
 
-## Uso
+## Cómo ejecutarlo
 
-### Dashboard web (recomendado)
-
-```bash
-streamlit run app.py
-```
-
-Abre el navegador en `http://localhost:8501`. Desde la interfaz puedes:
-
-- Ingresar dominios o IPs separados por comas o saltos de línea
-- Activar **Modo Rápido** (sin Nmap) para resultados en segundos
-- Activar **Escanear todos los puertos** para revisar los 33 puertos del catálogo
-- Ver el dashboard interactivo con score, hallazgos y comparativa entre servidores
-- Revisar el **Informe de Riesgos** orientado al cliente final (sin jerga técnica)
-
-### CLI desde terminal
+### Opción A — Dashboard web (recomendado)
 
 ```bash
-# Un solo objetivo
-python run_audit.py google.com
-
-# Múltiples objetivos
-python run_audit.py google.com cloudflare.com github.com
-
-# Desde archivo
-python run_audit.py --file targets.txt
-
-# Con puerto personalizado
-python run_audit.py api.myserver.com:8443
-
-# Omitir Nmap (más rápido)
-python run_audit.py google.com --skip-nmap
-
-# Elegir formato de reporte
-python run_audit.py google.com --format html json
-python run_audit.py google.com --format all --out ./mis_reportes/
+streamlit run dashboard.py
 ```
 
-Formato de `targets.txt`:
+Se abre automáticamente el navegador en `http://localhost:8501`.
+
+**Pasos en la interfaz:**
+1. En el panel izquierdo, escribe los dominios o IPs a analizar (uno por línea o separados por comas).
+2. Activa "Escanear todos los puertos críticos" si quieres revisar más allá del puerto 443.
+3. Haz clic en **🔍 Iniciar Escaneo**.
+4. Los resultados aparecen organizados en secciones:
+   - **Recomendaciones de Seguridad** — hallazgos ordenados por criticidad
+   - **Comparación de Servidores** — matriz de diferencias (si se escanean ≥ 2 servidores)
+   - **Información Detallada** — protocolos, cipher suites y certificado servidor por servidor
+
+### Opción B — Línea de comandos
+
+```bash
+# Un solo servidor (puerto 443 por defecto)
+python tlsauditor.py google.com
+
+# Múltiples servidores
+python tlsauditor.py google.com cloudflare.com github.com
+
+# Puerto personalizado
+python tlsauditor.py api.miservidor.com:8443
+
+# Escanear catálogo completo de puertos
+python tlsauditor.py google.com --all-ports
 ```
-# Comentarios con #
+
+---
+
+## Formatos de entrada aceptados
+
+```
 google.com
-cloudflare.com:443
-github.com
-192.168.1.1:8443
+example.com:8443
+192.168.1.10
+192.168.1.10:443
 ```
 
 ---
 
-## Módulos del scanner (uso standalone para tests)
+## Qué detecta — tabla de hallazgos
 
-Cada módulo puede ejecutarse de forma independiente desde la terminal:
-
-```bash
-# 01 · Validar objetivos
-python scanner/01_validator.py google.com bad_target 999.999.999.999
-
-# 02 · Escaneo TLS (protocolos + certificados)
-python scanner/02_tls_scanner.py google.com github.com --json
-
-# 03 · Escaneo Nmap NSE (puertos + vulnerabilidades)
-python scanner/03_nmap_scanner.py google.com --quick
-
-# 04 · Análisis criptográfico del certificado
-python scanner/04_crypto_analyzer.py github.com
-
-# 05 · Evaluación de riesgo (requiere JSON de escaneo previo)
-python scanner/05_risk_evaluator.py --input scan_results.json
-
-# 06 · Generación de reporte desde JSON
-python scanner/06_reporter.py --input audit_data.json --format html
-```
-
----
-
-## Arquitectura y flujo de datos
-
-```
-Entrada (hosts/IPs)
-        │
-        ▼
-01_validator.py
-  · Valida formato (dominio / IP / host:puerto)
-  · Resuelve DNS
-  · Elimina duplicados
-        │
-        ▼ (paralelo, ThreadPoolExecutor)
-┌───────────────────────────────────────┐
-│  02_tls_scanner.py                    │
-│  · Protocolos TLS/SSL habilitados     │
-│  · Cipher suites (débiles/fuertes)    │
-│  · Estado del certificado             │
-│  Backend: sslyze → ssl nativo         │
-├───────────────────────────────────────┤
-│  03_nmap_scanner.py  (opcional)       │
-│  · Detección Heartbleed / POODLE      │
-│  · Grade de ciphers (ssl-enum-ciphers)│
-│  · Headers HTTP de seguridad          │
-├───────────────────────────────────────┤
-│  04_crypto_analyzer.py                │
-│  · Fuerza de clave pública (RSA/EC)   │
-│  · Algoritmo de firma (SHA1 = débil)  │
-│  · SANs, fingerprints, tipo cert DV/EV│
-└───────────────────────────────────────┘
-        │
-        ▼
-05_risk_evaluator.py
-  · Score de riesgo acumulado (0-100)
-  · Nivel global: CRITICAL / HIGH / MEDIUM / LOW / OK
-  · Lista de hallazgos ordenados por severidad
-  · Comparativa entre servidores
-        │
-        ▼
-06_reporter.py
-  · JSON  → datos estructurados
-  · CSV   → análisis en Excel / pandas
-  · HTML  → reporte visual auto-contenido
-  · TXT   → log estructurado
-        │
-        ▼
-app.py (Dashboard Streamlit)
-  · Métricas en tiempo real
-  · Gauge de riesgo por servidor
-  · Informe para cliente final (lenguaje no técnico)
-  · Log de ejecución en vivo
-```
-
----
-
-## Qué detecta el sistema
-
-| Hallazgo | Severidad | Módulo |
+| Hallazgo | Severidad | Descripción |
 |---|---|---|
-| SSL 2.0 / SSL 3.0 habilitado | CRITICAL | 02 |
-| TLS 1.0 habilitado | HIGH | 02 |
-| TLS 1.1 habilitado | MEDIUM | 02 |
-| TLS 1.3 ausente | MEDIUM | 02 |
-| Cipher suites débiles (RC4, 3DES, NULL, EXPORT) | HIGH | 02 |
-| Certificado expirado | CRITICAL | 02, 04 |
-| Certificado próximo a expirar (<30 días) | HIGH/MEDIUM | 02, 04 |
-| Certificado no confiable (autofirmado) | CRITICAL | 02 |
-| Clave pública débil (RSA<2048, EC<256) | HIGH | 04 |
-| Algoritmo de firma SHA1/MD5 | HIGH | 04 |
-| Certificado de larga duración (>825 días) | LOW | 04 |
-| Heartbleed (CVE-2014-0160) | CRITICAL | 03 |
-| POODLE (CVE-2014-3566) | HIGH | 03 |
-| LOGJAM / DH débil (CVE-2015-4000) | HIGH | 03 |
-| Grade de cifrado F/E por ssl-enum-ciphers | HIGH | 03 |
-| Headers HTTP de seguridad ausentes (HSTS, CSP…) | MEDIUM/LOW | 03 |
+| SSL 2.0 habilitado | 🔴 CRÍTICO | Protocolo roto hace décadas — tráfico legible por atacantes |
+| SSL 3.0 habilitado | 🔴 CRÍTICO | Vulnerable a POODLE (CVE-2014-3566) — descifra cookies de sesión |
+| TLS 1.0 / 1.1 habilitado | 🟠 ALTO | Retirados oficialmente en 2021 (RFC 8996) — degradación de protocolo |
+| Sin TLS 1.2 ni 1.3 | 🔴 CRÍTICO | Sin cifrado moderno — todo el tráfico interceptable |
+| TLS 1.3 no habilitado | 🟡 MEDIO | Se pierde la versión más rápida y segura disponible |
+| Cipher NULL o ANON | 🔴 CRÍTICO | Conexiones sin cifrado o sin autenticación |
+| Cipher EXPORT (40-bit) | 🔴 CRÍTICO | Vulnerable a FREAK (CVE-2015-0204) |
+| RC4 / DES / 3DES / MD5 | 🟠 ALTO | Algoritmos rotos o con ataques conocidos |
+| Certificado vencido | 🔴 CRÍTICO | Navegadores rechazan la conexión con error grave |
+| Certificado próximo a vencer | 🟠 ALTO/🔴 CRÍTICO | <30 días → alto, <7 días → crítico |
+| Certificado no confiable | 🔴 CRÍTICO | Autofirmado o CA no reconocida — advertencias en el navegador |
+
+---
+
+## Sistema de puntuación de cipher suites
+
+Cada cipher suite recibe un **score de 0 a 10** calculado con 4 componentes ponderados según criterios de seguridad modernos:
+
+| Componente | Peso | Ejemplos |
+|---|---|---|
+| Cifrado simétrico + modo | 40% | AES-256-GCM=10, ChaCha20=10, 3DES=2, NULL=0 |
+| Intercambio de claves (KEX) | 35% | ECDHE=10, DHE=9, RSA=3, EXPORT=0 |
+| Autenticación | 15% | ECDSA=10, RSA=7, ANON=0 |
+| Hash / MAC | 10% | SHA-256=10, SHA-1=4, MD5=0 |
+
+**Etiquetas de resultado:**
+
+| Score | Etiqueta |
+|---|---|
+| 9.0 – 10.0 | ✅ FUERTE |
+| 7.0 – 8.9  | 🟢 BUENO |
+| 5.0 – 6.9  | 🟡 ACEPTABLE |
+| 3.0 – 4.9  | 🟠 DÉBIL |
+| 0.0 – 2.9  | 🔴 CRÍTICO |
 
 ---
 
 ## Catálogo de puertos auditados
 
-El sistema revisa hasta **33 puertos** agrupados en tres perfiles:
+Con la opción `--all-ports` (dashboard) o `--all-ports` (CLI), se escanean **33 puertos** en tres perfiles:
 
-| Perfil | Descripción |
+| Perfil | Puertos representativos |
 |---|---|
-| **LEGACY** | FTP, SMTP, POP3, IMAP, VNC, MySQL, Redis… — detecta TLS obsoleto |
-| **STANDARD** | PostgreSQL, Docker, LDAP, SMTP-TLS, K8s… — estándar TLS 1.2 |
-| **MODERN** | APIs, servicios cloud, Kafka, Consul… — TLS 1.3 preferido |
+| **LEGACY** | 443, 21 (FTP), 995 (POP3S), 993 (IMAPS), 465 (SMTPS), 5900 (VNC), 3306 (MySQL)… |
+| **STANDARD** | 5432 (PostgreSQL), 2376 (Docker), 6443 (Kubernetes), 8883 (MQTT), 5061 (SIP-TLS)… |
+| **MODERN** | 8500 (Consul), 2379 (etcd), 9443, 9092 (Kafka), 5000, 8000, 3000… |
 
 ---
 
-## Formatos de reporte
+## Ejemplo de salida en terminal
 
-| Formato | Descripción |
-|---|---|
-| **HTML** | Reporte visual auto-contenido, ideal para presentar al cliente |
-| **JSON** | Datos estructurados para integración con otras herramientas |
-| **CSV** | Vista tabular para análisis en Excel / pandas |
-| **TXT** | Log estructurado para pipelines y auditorías automatizadas |
-
-Los reportes se guardan en `reports/` con nombre `tls_audit_YYYYMMDD_HHMMSS.<formato>`.
-
----
-
-## Dependencias
-
-| Librería | Uso |
-|---|---|
-| `streamlit` | Dashboard web interactivo |
-| `plotly` | Gauge de riesgo y gráficos |
-| `sslyze` ≥5.x | Motor principal de análisis TLS |
-| `cryptography` ≥42.x | Análisis criptográfico de certificados |
-| `nmap` ≥7.x (externo) | Escaneo NSE — Heartbleed, POODLE, LOGJAM |
-
----
-
-## Integración programática
-
-Para llamar el motor desde otro script Python:
-
-```python
-# Llamar el orquestador directamente
-import importlib.util, pathlib
-
-ROOT = pathlib.Path(__file__).parent
-spec = importlib.util.spec_from_file_location("risk", ROOT / "scanner/05_risk_evaluator.py")
-mod_risk = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod_risk)
-
-evaluation = mod_risk.evaluate_host("google.com", 443, tls_result, nmap_result, crypto_result)
-print(evaluation["risk_level"], evaluation["risk_score"])
 ```
+=> Iniciando escaneo de 1 endpoint(s) ...
 
-O usando `run_audit.py`:
+=======================================================
+  Resultados para google.com:443
+=======================================================
 
-```python
-# run_audit expone run_audit() como función pública
-from run_audit import run_audit
+  -- Soporte de Protocolos --
+  SSL 2.0: no soportado
+  SSL 3.0: no soportado
+  TLS 1.0: no soportado
+  TLS 1.1: no soportado
+  TLS 1.2: SOPORTADO  (5 cipher suite(s))
+      * TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384    [9.4/10 - FUERTE]
+      * TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256       [8.6/10 - BUENO]
+  TLS 1.3: SOPORTADO  (3 cipher suite(s))
 
-result = run_audit(
-    raw_targets=["google.com", "github.com"],
-    formats=["html", "json"],
-    skip_nmap=True,
-    output_dir="reports/",
-)
+  -- Información del Certificado --
+  Sujeto      : CN=*.google.com
+  Confiable   : Sí
+  Vencimiento : Vence en 72 días — OK
 
-for ev in result["evaluations"]:
-    print(f"{ev['host']} → {ev['risk_level']} ({ev['risk_score']}/100)")
+  ── ANÁLISIS DE RIESGOS Y RECOMENDACIONES ──
 
-html_path = result["reports"].get("html")
+  🟡 [MEDIO] TLS 1.3 No Habilitado
+     Riesgo : El servidor no ofrece TLS 1.3...
+     Acción : Habilitar TLS 1.3 en el servidor.
 ```
 
 ---
 
-## Notas de diseño
+## Notas importantes
 
-- **Enfoque defensivo**: el sistema diagnostica configuraciones inseguras, no las explota.
-- **Sin dependencias de red externas**: todo el análisis es directo contra el servidor objetivo.
-- **Paralelo por defecto**: el dashboard usa `ThreadPoolExecutor` con pre-scan TCP para descartar puertos cerrados antes de lanzar los análisis pesados.
-- **Dos audiencias**: los hallazgos técnicos (módulos 02-05) son complementados por el informe de cliente final del dashboard (riesgo + impacto de negocio + qué pedirle al desarrollador).
-- **Reproducible**: cada ejecución genera un reporte con timestamp único en `reports/`.
+- **Solo uso defensivo**: esta herramienta diagnostica configuraciones inseguras, no explota vulnerabilidades.
+- **Sin dependencias externas de red**: todo el análisis se hace conectando directamente al servidor objetivo.
+- El escaneo puede tardar de **segundos a minutos** dependiendo del número de servidores y puertos.
+- Ambos archivos (`dashboard.py` y `tlsauditor.py`) deben estar en la **misma carpeta**.
