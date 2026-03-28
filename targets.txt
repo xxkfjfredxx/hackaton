@@ -1,0 +1,6 @@
+# google.com
+# cloudflare.com
+# github.com
+# example.com:443
+# badssl.com
+# 34.45.64.235
