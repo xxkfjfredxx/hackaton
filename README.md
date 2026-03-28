@@ -4,6 +4,12 @@
 
 Herramienta de ciberseguridad que analiza la configuración TLS/SSL de servidores web para detectar vulnerabilidades, evaluar el nivel de riesgo y generar recomendaciones claras orientadas tanto al equipo técnico como al cliente final.
 
+## 📸 Vista previa
+
+![Dashboard principal — comparación de múltiples servidores](images/preview%20(2).png)
+
+![Dashboard detalle — protocolos, cipher suites y certificado](images/preview%20(4).png)
+
 ---
 
 ## ¿Para qué sirve?
@@ -80,6 +86,8 @@ pip install sslyze cryptography streamlit pandas
 streamlit run dashboard.py
 ```
 
+![Interfaz del dashboard con resultados de escaneo](images/preview%20(3).png)
+
 Se abre automáticamente el navegador en `http://localhost:8501`.
 
 **Pasos en la interfaz:**
@@ -139,6 +147,8 @@ example.com:8443
 ---
 
 ## Sistema de puntuación de cipher suites
+
+![Desglose detallado de componentes por cipher suite](images/preview%20(1).png)
 
 Cada cipher suite recibe un **score de 0 a 10** calculado con 4 componentes ponderados según criterios de seguridad modernos:
 
