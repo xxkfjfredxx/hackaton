@@ -183,13 +183,21 @@ Con la opción `--all-ports` (dashboard) o `--all-ports` (CLI), se escanean **33
 
 ---
 
-## Ejemplo de salida en terminal
+## Ejemplos de entrada y salida
 
+### Ejemplo 1 — Servidor moderno y bien configurado
+
+**Entrada:**
+```bash
+python tlsauditor.py cloudflare.com
+```
+
+**Salida:**
 ```
 => Iniciando escaneo de 1 endpoint(s) ...
 
 =======================================================
-  Resultados para google.com:443
+  Resultados para cloudflare.com:443
 =======================================================
 
   -- Soporte de Protocolos --
@@ -197,22 +205,192 @@ Con la opción `--all-ports` (dashboard) o `--all-ports` (CLI), se escanean **33
   SSL 3.0: no soportado
   TLS 1.0: no soportado
   TLS 1.1: no soportado
-  TLS 1.2: SOPORTADO  (5 cipher suite(s))
+  TLS 1.2: SOPORTADO  (3 cipher suite(s))
       * TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384    [9.4/10 - FUERTE]
-      * TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256       [8.6/10 - BUENO]
+      * TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256    [9.0/10 - FUERTE]
+        ↳ KEX: ECDHE=10  |  Auth: ECDSA=10  |  Cipher: AES_128_GCM=9  |  Hash: SHA256=10
+      * TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256  [9.8/10 - FUERTE]
   TLS 1.3: SOPORTADO  (3 cipher suite(s))
 
   -- Información del Certificado --
-  Sujeto      : CN=*.google.com
-  Confiable   : Sí
-  Vencimiento : Vence en 72 días — OK
+  Sujeto       : CN=cloudflare.com
+  Emisor       : CN=Google Trust Services, O=Google Trust Services, C=US
+  Tipo de clave: ECPublicKey
+  Válido desde : 2025-01-10 08:00:00+00:00
+  Válido hasta : 2025-04-10 07:59:59+00:00
+  Vencimiento  : Vence en 89 días — OK
+  Confiable    : Sí
 
   ── ANÁLISIS DE RIESGOS Y RECOMENDACIONES ──
+  [OK] Sin hallazgos de seguridad — la configuración es correcta.
+```
+
+---
+
+### Ejemplo 2 — Servidor con protocolos obsoletos
+
+**Entrada:**
+```bash
+python tlsauditor.py servidor-legacy.empresa.com
+```
+
+**Salida:**
+```
+=> Iniciando escaneo de 1 endpoint(s) ...
+
+=======================================================
+  Resultados para servidor-legacy.empresa.com:443
+=======================================================
+
+  -- Soporte de Protocolos --
+  SSL 2.0: no soportado
+  SSL 3.0: no soportado
+  TLS 1.0: SOPORTADO  (5 cipher suite(s))
+      * TLS_RSA_WITH_AES_256_CBC_SHA      [4.9/10 - DÉBIL]   [DÉBIL]
+      * TLS_RSA_WITH_3DES_EDE_CBC_SHA     [3.3/10 - DÉBIL]   [DÉBIL]
+  TLS 1.1: SOPORTADO  (5 cipher suite(s))
+  TLS 1.2: SOPORTADO  (11 cipher suite(s))
+  TLS 1.3: no soportado
+
+  -- Información del Certificado --
+  Vencimiento  : Vence en 18 días — URGENTE
+  Confiable    : Sí
+
+  ────────────────────────────────────────────────────────────
+  ANÁLISIS DE RIESGOS Y RECOMENDACIONES
+  ────────────────────────────────────────────────────────────
+
+  🟠 [ALTO] Protocolo(s) Obsoleto(s): TLS 1.0, TLS 1.1
+     Riesgo : TLS 1.0 y TLS 1.1 fueron retirados en 2021 (RFC 8996).
+              Exponen a ataques de degradación de protocolo.
+     Acción : Deshabilitar TLS 1.0 y TLS 1.1. Solo habilitar TLS 1.2 y TLS 1.3.
+
+  🟠 [ALTO] Certificado Vence en 18 Día(s)
+     Riesgo : El certificado expirará en 18 días. Los usuarios verán
+              errores de seguridad si no se renueva a tiempo.
+     Acción : Renovar antes de que expire. Considerar Let's Encrypt
+              para renovación automática.
 
   🟡 [MEDIO] TLS 1.3 No Habilitado
-     Riesgo : El servidor no ofrece TLS 1.3...
+     Riesgo : El servidor no ofrece TLS 1.3, la versión más rápida y segura.
+     Acción : Habilitar TLS 1.3 — mejora velocidad y seguridad simultáneamente.
+```
+
+---
+
+### Ejemplo 3 — Múltiples servidores con comparativa
+
+**Entrada:**
+```bash
+python tlsauditor.py google.com 1.1.1.1 8.8.8.8
+```
+
+**Salida:**
+```
+=> Iniciando escaneo de 3 endpoint(s) ...
+
+[... resultados individuales de cada servidor ...]
+
+========================================================================
+  INFORME DE COMPARACIÓN DE SERVIDORES
+========================================================================
+
+-- Matriz de soporte de protocolos --
+
+  Protocolo       google.com:443    1.1.1.1:443    8.8.8.8:443
+  ──────────────────────────────────────────────────────────────
+  SSL 2.0                     NO             NO             NO
+  SSL 3.0                     NO             NO             NO
+  TLS 1.0              SÍ(5)             NO             NO    ⚠ DISCREPANCIA
+  TLS 1.1              SÍ(5)             NO             NO    ⚠ DISCREPANCIA
+  TLS 1.2             SÍ(11)          SÍ(5)          SÍ(3)
+  TLS 1.3              SÍ(3)          SÍ(3)          SÍ(3)
+
+-- Diferencias de cipher suites --
+
+  TLS 1.0:
+    Solo en google.com:443 (5):
+      + TLS_RSA_WITH_AES_256_CBC_SHA            [4.9/10 - DÉBIL]
+      + TLS_RSA_WITH_3DES_EDE_CBC_SHA           [3.3/10 - DÉBIL]
+
+-- Tipos de clave de certificado --
+
+  google.com:443       ECPublicKey
+  1.1.1.1:443          ECPublicKey
+  8.8.8.8:443          ECPublicKey
+
+  ✔ Todos los servidores usan el mismo tipo de clave de certificado.
+```
+
+---
+
+### Ejemplo 4 — IP con puerto personalizado
+
+**Entrada:**
+```bash
+python tlsauditor.py 192.168.1.100:8443
+```
+
+**Salida:**
+```
+=> Iniciando escaneo de 1 endpoint(s) ...
+
+=======================================================
+  Resultados para 192.168.1.100:8443
+=======================================================
+
+  -- Soporte de Protocolos --
+  TLS 1.2: SOPORTADO  (2 cipher suite(s))
+  TLS 1.3: no soportado
+
+  -- Información del Certificado --
+  Sujeto       : CN=mi-servidor-interno
+  Confiable    : No (autofirmado o CA desconocida)
+  Vencimiento  : Vence en 365 días — OK
+
+  ────────────────────────────────────────────────────────────
+  ANÁLISIS DE RIESGOS Y RECOMENDACIONES
+  ────────────────────────────────────────────────────────────
+
+  🔴 [CRÍTICO] Certificado No Confiable (Autofirmado)
+     Riesgo : No emitido por una CA reconocida. Los navegadores muestran
+              advertencias que alejan a los usuarios.
+     Acción : Obtener certificado de una CA reconocida. Let's Encrypt es gratuito.
+
+  🟡 [MEDIO] TLS 1.3 No Habilitado
+     Riesgo : El servidor no ofrece TLS 1.3, la versión más rápida y segura.
      Acción : Habilitar TLS 1.3 en el servidor.
 ```
+
+---
+
+### Ejemplo 5 — Objetivo inválido o sin conectividad
+
+**Entrada:**
+```bash
+python tlsauditor.py 999.999.999.999 hostname-invalido
+```
+
+**Salida:**
+```
+Advertencia: formato de objetivo incorrecto '999.999.999.999', saltando.
+Advertencia: formato de objetivo incorrecto 'hostname-invalido', saltando.
+No hay objetivos válidos para escanear.
+```
+
+---
+
+### Entradas aceptadas en el dashboard
+
+| Formato de entrada | Válido | Descripción |
+|---|---|---|
+| `google.com` | ✅ | Dominio estándar, escanea puerto 443 |
+| `api.servidor.com:8443` | ✅ | Dominio con puerto personalizado |
+| `192.168.1.10` | ✅ | IP directa, puerto 443 |
+| `192.168.1.10:443` | ✅ | IP con puerto explícito |
+| `localhost` | ✅ | Servidor local |
+| `999.999.999.999` | ❌ | IP inválida — ignorada |
+| `servidor` (sin punto) | ❌ | Hostname sin TLD — ignorado |
 
 ---
 
@@ -222,3 +400,4 @@ Con la opción `--all-ports` (dashboard) o `--all-ports` (CLI), se escanean **33
 - **Sin dependencias externas de red**: todo el análisis se hace conectando directamente al servidor objetivo.
 - El escaneo puede tardar de **segundos a minutos** dependiendo del número de servidores y puertos.
 - Ambos archivos (`dashboard.py` y `tlsauditor.py`) deben estar en la **misma carpeta**.
+
