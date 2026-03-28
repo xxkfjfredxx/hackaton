@@ -126,7 +126,8 @@ st.markdown("""
 # ── Findings helper (returns list, no printing) ────────────────────────────────
 def get_findings(supported_protos, weak_ciphers_by_proto,
                  cert_trusted, cert_expired, cert_days,
-                 has_tls12, has_tls13):
+                 has_tls12, has_tls13,
+                 cert_key_type=None, cert_key_size=None):
     """Return list of (priority, severity, title, risk, action)."""
     findings = []
     OBSOLETE = {"SSL 2.0", "SSL 3.0", "TLS 1.0", "TLS 1.1"}
@@ -210,6 +211,28 @@ def get_findings(supported_protos, weak_ciphers_by_proto,
                          "No emitido por una CA reconocida. Los navegadores muestran "
                          "advertencias que alejan a los usuarios.",
                          "Obtener certificado de una CA reconocida. Let's Encrypt es gratuito."))
+
+    # ── Tamaño de clave RSA/DSA ──────────────────────────────────────────
+    if cert_key_size is not None and cert_key_type in ("RSAPublicKey", "DSAPublicKey"):
+        algo = "RSA" if cert_key_type == "RSAPublicKey" else "DSA"
+        if cert_key_size < 2048:
+            findings.append((
+                1, "CRÍTICO",
+                f"Clave {algo} Insuficiente — {cert_key_size} bits",
+                f"Una clave {algo} de {cert_key_size} bits puede romperse con hardware moderno. "
+                "NIST retiró {algo}-1024 en 2010 y ya no se considera seguro.",
+                f"Reemplazar el certificado con clave {algo}-2048 mínimo, "
+                "o mejor migrar a ECDSA P-256/P-384 (más rápido y seguro).",
+            ))
+        elif cert_key_size < 3072:
+            findings.append((
+                3, "MEDIO",
+                f"Clave {algo} de {cert_key_size} bits — Considerar Actualización",
+                f"Las recomendaciones actuales (NIST SP 800-57) sugieren {algo}-3072+ "
+                "para certificados de larga duración. {algo}-2048 sigue siendo aceptable hoy.",
+                f"Planificar migración a {algo}-3072 o, idealmente, a ECDSA P-256 "
+                "que ofrece seguridad equivalente a RSA-3072 con clave 4x más pequeña.",
+            ))
 
     findings.sort(key=lambda x: x[0])
     return findings
@@ -354,6 +377,7 @@ def scan_servers(raw_targets: list[str], all_ports: bool = False) -> list[dict]:
                     "subject": leaf.subject.rfc4514_string(),
                     "issuer": leaf.issuer.rfc4514_string(),
                     "key_type": leaf.public_key().__class__.__name__,
+                    "key_size": getattr(leaf.public_key(), "key_size", None),
                     "serial": str(leaf.serial_number),
                     "valid_from": str(not_before),
                     "valid_until": str(not_after),
@@ -362,10 +386,14 @@ def scan_servers(raw_targets: list[str], all_ports: bool = False) -> list[dict]:
                     "trusted": cert_trusted,
                 }
 
+        cert_key_size = data["certificate"]["key_size"] if data.get("certificate") else None
+        cert_key_type_val = data["certificate"]["key_type"] if data.get("certificate") else None
         data["recommendations"] = get_findings(
             supported_protos, weak_ciphers_by_proto,
             cert_trusted, cert_expired, cert_days,
             has_tls12, has_tls13,
+            cert_key_type=cert_key_type_val,
+            cert_key_size=cert_key_size,
         )
         results.append(data)
 
@@ -547,14 +575,29 @@ def _build_html(results: list) -> str:
         trusted_str = ('✅ Confiable' if cert.get("trusted")
                        else '❌ No confiable (autofirmado)')
         trusted_c = "#16a34a" if cert.get("trusted") else "#dc2626"
+
+        key_size = cert.get("key_size")
+        key_type_raw = cert.get("key_type", "")
+        if key_size and key_type_raw in ("RSAPublicKey", "DSAPublicKey"):
+            algo = "RSA" if "RSA" in key_type_raw else "DSA"
+            if key_size < 2048:
+                ks_str, ks_c = f"{algo} {key_size} bits — 🔴 INSUFICIENTE", "#dc2626"
+            elif key_size < 3072:
+                ks_str, ks_c = f"{algo} {key_size} bits — ⚠️ Aceptable", "#f97316"
+            else:
+                ks_str, ks_c = f"{algo} {key_size} bits — ✅ Fuerte", "#16a34a"
+        else:
+            ks_str = key_type_raw or "N/A"
+            ks_c = "#374151"
+
         rows = [
-            ("Sujeto",        cert.get("subject", "N/A"),  "#374151"),
-            ("Emisor",        cert.get("issuer",  "N/A"),  "#374151"),
-            ("Tipo de clave", cert.get("key_type","N/A"),  "#374151"),
-            ("Válido desde",  cert.get("valid_from","N/A"),"#374151"),
-            ("Válido hasta",  cert.get("valid_until","N/A"),"#374151"),
-            ("Vencimiento",   d_str,                       d_c),
-            ("Confiabilidad", trusted_str,                 trusted_c),
+            ("Sujeto",              cert.get("subject", "N/A"),  "#374151"),
+            ("Emisor",              cert.get("issuer",  "N/A"),   "#374151"),
+            ("Tipo / Tamaño clave", ks_str,                       ks_c),
+            ("Válido desde",        cert.get("valid_from","N/A"),  "#374151"),
+            ("Válido hasta",        cert.get("valid_until","N/A"), "#374151"),
+            ("Vencimiento",          d_str,                        d_c),
+            ("Confiabilidad",        trusted_str,                  trusted_c),
         ]
         html_rows = "".join(
             f'<tr><td style="padding:5px 10px;color:#6b7280;white-space:nowrap;'
@@ -1270,11 +1313,30 @@ def render_details(results: list) -> None:
                     if len(issr) > 60:
                         issr = issr[:60] + "…"
 
+                    key_size = cert.get("key_size")
+                    key_type_raw = cert.get("key_type", "")
+                    if key_size:
+                        if key_type_raw in ("RSAPublicKey", "DSAPublicKey"):
+                            algo = "RSA" if "RSA" in key_type_raw else "DSA"
+                            if key_size < 2048:
+                                key_size_str = (f'<span class="cert-bad">'
+                                                f'{algo} {key_size} bits — 🔴 INSUFICIENTE</span>')
+                            elif key_size < 3072:
+                                key_size_str = (f'<span class="cert-warn">'
+                                                f'{algo} {key_size} bits — ⚠️ Aceptable</span>')
+                            else:
+                                key_size_str = (f'<span class="cert-ok">'
+                                                f'{algo} {key_size} bits — ✅ Fuerte</span>')
+                        else:
+                            key_size_str = f'<code>{key_type_raw}</code> (clave moderna)'
+                    else:
+                        key_size_str = "N/A"
+
                     st.markdown(f"""
 <table class="cert-table">
   <tr><td>Sujeto</td><td><code>{subj}</code></td></tr>
   <tr><td>Emisor</td><td><code>{issr}</code></td></tr>
-  <tr><td>Tipo de Clave</td><td><code>{html.escape(cert['key_type'])}</code></td></tr>
+  <tr><td>Tipo / Tamaño de Clave</td><td>{key_size_str}</td></tr>
   <tr><td>Válido desde</td><td>{html.escape(cert['valid_from'])}</td></tr>
   <tr><td>Válido hasta</td><td>{html.escape(cert['valid_until'])}</td></tr>
   <tr><td>Vencimiento</td><td>{days_str}</td></tr>
@@ -1285,11 +1347,15 @@ def render_details(results: list) -> None:
                     st.markdown("<br>", unsafe_allow_html=True)
                     health_items = [
                         ("CA Reconocida",   cert["trusted"],          True),
-                        ("No Expirado", not cert["expired"],      True),
+                        ("No Expirado",     not cert["expired"],      True),
                         ("Margen > 30 días",
-                         (cert["days_remaining"]
-                          or 0) > 30 and not cert["expired"],
+                         (cert["days_remaining"] or 0) > 30 and not cert["expired"],
                          False),
+                        ("Clave RSA ≥ 2048 bits",
+                         not (cert.get("key_size") and
+                              cert.get("key_type") in ("RSAPublicKey", "DSAPublicKey") and
+                              cert["key_size"] < 2048),
+                         True),
                     ]
                     for label, ok_flag, required in health_items:
                         icon = "✅" if ok_flag else ("🔴" if required else "⚠️")
